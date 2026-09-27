@@ -1,0 +1,5 @@
+ultralytics[export-openvino]>=8.4.63,<9
+imageio-ffmpeg>=0.6,<0.7
+requests>=2.32,<3
+pytest>=8,<10
+lap>=0.5.12,<0.6

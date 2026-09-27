@@ -1,0 +1,14 @@
+{
+  "stream_url": "rtsp://127.0.0.1:8554/camera",
+  "version": 1,
+  "camera_id": "camera_local",
+  "roi": [],
+  "line_a": [],
+  "line_b": [],
+  "lanes": [],
+  "analysis_fps": 10,
+  "preview_fps": 5,
+  "detection_confidence": 0.2,
+  "inference_backend": "ultralytics_auto",
+  "lane_change_confirmations": 3
+}

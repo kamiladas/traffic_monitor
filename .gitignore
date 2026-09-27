@@ -1,0 +1,14 @@
+.venv/
+.pytest_cache/
+.tmp/
+__pycache__/
+*.py[cod]
+data/imports/
+data/recordings/
+data/evidence/
+data/configs/*.json
+!data/configs/example.json
+vendor/models/*.pt
+vendor/models/*_openvino_model/
+vendor/mediamtx/auto.crt
+vendor/mediamtx/auto.key

@@ -1,0 +1,22 @@
+logLevel: info
+
+# Podglad HLS i WebRTC jest dostepny tylko lokalnie na tym komputerze.
+hlsAddress: 127.0.0.1:8888
+webrtcAddress: 127.0.0.1:8889
+
+# RTSP dla lokalnego analizatora pojazdow.
+rtspAddress: 127.0.0.1:8554
+rtspTransports: [tcp]
+
+# Wylacz nieuzywane publiczne serwery; wszystko pozostaje na localhost.
+rtmp: false
+srt: false
+moq: false
+webrtcLocalUDPAddress: 127.0.0.1:8189
+
+paths:
+  camera:
+    # Wstawiane przy starcie przez MTX_PATHS_CAMERA_SOURCE, bez zapisu hasla.
+    source: publisher
+    rtspTransport: tcp
+    record: no

@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Traffic Monitor</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div><strong>Traffic Monitor</strong><span id="cameraName"></span></div>
+    <nav><button id="showEditor" class="active">Kalibracja</button><button id="showLive">Pomiar ruchu</button><button id="showRecorder">Rejestrator</button></nav>
+    <div class="status" id="status">Ładowanie…</div>
+  </header>
+  <main id="editorView">
+    <aside>
+      <h2>Nagranie MP4</h2>
+      <input id="mp4Path" placeholder="Ścieżka MP4 (opcjonalnie)">
+      <button id="chooseMp4">Wybierz / otwórz MP4</button>
+      <input id="mp4Picker" type="file" accept=".mp4,video/mp4" hidden>
+      <p class="hint">Przycisk otwiera okno przeglądarki i tworzy lokalną kopię pliku w aplikacji. Wklejenie pełnej ścieżki otwiera MP4 bez kopiowania.</p>
+      <p id="mp4Info" class="hint">Wybierz plik. Kamera nie jest wymagana.</p>
+      <h2>Silnik analizy MP4</h2>
+      <label>Urządzenie AI<select id="calibrationBackend"><option value="ultralytics_auto">Automatycznie (NVIDIA/CPU)</option><option value="ultralytics_cuda">NVIDIA / CUDA</option><option value="openvino_intel_gpu">Intel Iris Xe / OpenVINO</option><option value="ultralytics_cpu">CPU</option></select></label>
+      <label>Limit podglądu AI [klatek/s]<input id="previewFpsInput" type="number" min="1" max="120" step="1" value="3"></label>
+      <p class="hint">Testowo: 1–120. To limit obrazu w przeglądarce, nie liczba klatek analizowanych przez model. Powyżej FPS filmu nie powstaną nowe klatki; wyższa wartość może zwiększyć obciążenie.</p>
+      <button id="saveCalibrationBackend" class="primary">Zapisz silnik i podgląd</button>
+      <p id="calibrationBackendStatus" class="hint" role="status">Odczyt ustawienia…</p>
+      <p class="hint">Wybór jest zapisywany w profilu. Uruchom analizę od początku, aby sprawdzić aktywny backend.</p>
+      <div class="row"><button id="prevFrame">◀ Klatka</button><button id="nextFrame">Klatka ▶</button></div>
+      <button id="playReview">Odtwarzaj / pauza</button>
+      <label>Numer klatki (od 0)<input id="frameIndex" type="number" min="0" value="0"></label>
+      <button id="seekFrame">Przejdź</button>
+      <h2>Pomiar ręczny</h2>
+      <label>Pas<select id="referenceLane"></select></label>
+      <div class="row"><button id="markA">Oznacz A</button><button id="markB">Oznacz B</button></div>
+      <p id="manualResult" class="hint">Wskaż przecięcia tego samego auta z A i B. To odczyt z klatek, bez interpolacji.</p>
+      <h2>1. Rysowanie</h2>
+      <div class="tools">
+        <button data-mode="roi">Obszar detekcji (ROI)</button>
+        <button data-mode="lane">Nowy pas</button>
+        <button data-mode="line_a">Linia A</button>
+        <button data-mode="line_b">Linia B</button>
+      </div>
+      <p class="hint">Klikaj punkty na obrazie. Wielokąt zakończ przyciskiem „Zakończ” albo Enter. Każdy istniejący punkt możesz chwycić i przeciągnąć.</p>
+      <div class="row">
+        <button id="finish" class="secondary">Zakończ</button>
+        <button id="undo" class="secondary">Cofnij punkt</button>
+      </div>
+
+      <h2>2. Parametry pasa</h2>
+      <label>Edytowany pas<select id="laneEditor"></select></label>
+      <label>Nazwa nowego pasa<input id="laneName" value="L1"></label>
+      <label>Odległość A–B [m]<input id="laneDistance" type="number" min="0.1" step="0.1" value="20"></label>
+      <label>Kierunek<select id="laneDirection"><option value="a_to_b">A → B</option><option value="b_to_a">B → A</option></select></label>
+
+      <h2>3. Pasy</h2>
+      <p class="hint">Pas/ROI służy tylko do przypisania pojazdu. Liczbą w wierszu pasa ustawiasz odległość między liniami A i B wzdłuż tego pasa — nie długość narysowanego obszaru. Zapisz profil przed pomiarem.</p>
+      <div id="laneList" class="lane-list"></div>
+
+      <div class="actions">
+        <button id="refresh" class="secondary">Nowa klatka</button>
+        <button id="clear" class="danger">Wyczyść wszystko</button>
+        <button id="save" class="primary">Zapisz profil</button>
+      </div>
+    </aside>
+    <section class="stage-wrap">
+      <div class="stage" id="stage">
+        <img id="frame" alt="Klatka z MediaMTX">
+        <canvas id="canvas"></canvas>
+      </div>
+      <div class="legend">
+        <span><i class="roi"></i>ROI</span><span><i class="lane"></i>Pasy</span>
+        <span><i class="a"></i>Linia A</span><span><i class="b"></i>Linia B</span>
+      </div>
+    </section>
+  </main>
+  <section id="liveView" class="measurement-view hidden">
+    <div class="command-deck">
+      <div class="command-title"><span class="eyebrow">TRAFFIC SESSION</span><strong>Pomiar ruchu</strong><span id="measurementBar" class="session-state">AI wyłączone</span></div>
+      <div class="command-controls">
+        <label class="source-switch"><span>Źródło</span><select id="analysisSource"><option value="file">MP4</option><option value="live">Live RTSP</option></select></label>
+        <label class="geometry-check"><input id="confirmGeometry" type="checkbox"><span>Geometria gotowa</span></label>
+        <button id="aiStart" class="run-button">▶ Start</button>
+        <button id="pauseFile" title="Pauza / wznów">Ⅱ</button>
+        <button id="aiStop" title="Zatrzymaj">■</button>
+        <button id="toggleAnalysisDrawer" class="settings-button" aria-expanded="false">⚙ Ustawienia</button>
+      </div>
+    </div>
+    <div class="session-progress"><span id="aiStatus"></span><span id="fileProgress"></span></div>
+    <div class="measurement-workspace">
+      <section class="video-console">
+        <div class="video-console-label"><span><i></i> ANALIZA OBRAZU</span><span id="videoSourceLabel">YOLO26 · FASTTRACK</span></div>
+        <div class="live-image"><img id="liveFrame" alt="Obraz analizowany przez AI"></div>
+      </section>
+      <div id="workspaceSplitter" class="workspace-splitter" role="separator" aria-label="Zmień szerokość obrazu i tabel" aria-orientation="vertical" tabindex="0" title="Przeciągnij, aby zmienić szerokość. Dwuklik przywraca układ automatyczny."></div>
+      <section class="lane-panel">
+        <div class="lane-panel-title"><div><span class="eyebrow">WYNIKI NA ŻYWO</span><h2>Pasy ruchu</h2></div><button id="exportAllCsv">↓ CSV</button></div>
+        <div id="laneTables" class="lane-tables"></div>
+      </section>
+    </div>
+    <section class="measurement-summary">
+      <div class="metric-grid"><div><b id="detectedCount">0</b><span>Wykryte</span></div><div><b id="totalCount">0</b><span>Pomiary</span></div><div><b id="unmeasuredCount">0</b><span>Bez pomiaru</span></div><div><b id="trackCount">0</b><span>Aktywne ID</span></div><div><b id="inferenceTime">-</b><span>Inferencja</span></div></div>
+      <span class="table-tip">Kliknij przejazd, aby zobaczyć szczegóły</span>
+    </section>
+    <aside id="analysisDrawer" class="analysis-drawer" aria-hidden="true">
+      <div class="drawer-heading"><div><span class="eyebrow">CONTROL CENTER</span><h2>Ustawienia sesji</h2></div><button id="closeAnalysisDrawer" aria-label="Zamknij">×</button></div>
+      <div id="analysisStatus" class="analysis-status">Uruchamianie...</div>
+      <div id="inferenceDeviceStatus" class="device-status" role="status">Silnik AI: sprawdzanie…</div>
+      <p id="analysisSourceHint" class="hint"></p>
+      <p id="previewHint" class="hint"></p>
+      <div class="distance-card"><strong>Kalibracja A–B</strong><div id="measurementDistances" aria-live="polite">Odczyt…</div><span id="distanceSource" class="hint"></span></div>
+      <h2>Model</h2>
+      <label>Urządzenie<select id="inferenceBackend"><option value="ultralytics_auto">Automatycznie (NVIDIA/CPU)</option><option value="ultralytics_cuda">NVIDIA / CUDA</option><option value="openvino_intel_gpu">Intel Iris Xe / OpenVINO</option><option value="ultralytics_cpu">CPU</option></select></label>
+      <label><span class="parameter-label">Próg detekcji <span class="parameter-help" tabindex="0" data-tooltip="Minimalna pewność detekcji YOLO. Niższa wartość przepuszcza słabe i zasłonięte pojazdy, ale może zwiększyć liczbę fałszywych boxów. Wyższa ogranicza detekcje do pewniejszych obiektów.">?</span></span><input id="confidenceInput" type="number" min="0.001" max="0.99" step="0.001" value="0.20"></label>
+      <label><span class="parameter-label">Tracker high <span class="parameter-help" tabindex="0" data-tooltip="Próg pierwszego dopasowania detekcji do istniejącego ID. Niższa wartość pomaga utrzymać pojazd przy zasłonięciu, ale zwiększa ryzyko przypisania niewłaściwego boxa.">?</span></span><input id="trackHighInput" type="number" min="0.001" max="0.99" step="0.001" value="0.25"></label>
+      <label><span class="parameter-label">Tracker low <span class="parameter-help" tabindex="0" data-tooltip="Dolny próg awaryjnego dopasowania słabych detekcji do już śledzonego pojazdu. Niższa wartość lepiej przechodzi przez chwilowe zasłonięcia, ale może pogorszyć stabilność ID.">?</span></span><input id="trackLowInput" type="number" min="0.001" max="0.99" step="0.001" value="0.10"></label>
+      <label><span class="parameter-label">Nowe ID <span class="parameter-help" tabindex="0" data-tooltip="Minimalna pewność potrzebna do utworzenia nowego tracka. Niższa wartość wcześniej nada ID słabym detekcjom, ale może tworzyć fałszywe lub zduplikowane ID.">?</span></span><input id="newTrackInput" type="number" min="0.001" max="0.99" step="0.001" value="0.25"></label>
+      <label><span class="parameter-label">Podtrzymanie ID [s] <span class="parameter-help" tabindex="0" data-tooltip="Jak długo pomiar czeka na powrót tego samego ID po zasłonięciu. Większa wartość pomaga za ciężarówką, ale zbyt duża może połączyć obserwacje rozdzielone długą przerwą.">?</span></span><input id="trackingGraceInput" type="number" min="0.1" max="5" step="0.1" value="0.5"></label>
+      <label><span class="parameter-label">Analiza AI [kl./s] <span class="parameter-help" tabindex="0" data-tooltip="Docelowa liczba klatek analizowanych przez model w trybie Live. Większa wartość daje częstsze aktualizacje boxów i trackera, ale zwiększa obciążenie GPU/CPU. Nie zmienia liczby klatek zapisanych w MP4.">?</span></span><input id="analysisFpsInput" type="number" min="2" max="25" step="1" value="10"></label>
+      <button id="recommendedTrackingSettings" type="button">Ustawienia zalecane</button>
+      <button id="saveAnalysisSettings" class="primary">Zapisz ustawienia</button>
+      <p id="analysisSettingsMessage" class="hint" role="status"></p>
+      <div id="laneStats" class="hidden"></div><div id="eventList" class="hidden"></div>
+    </aside>
+  </section>
+  <section id="recorderView" class="hidden" style="padding:24px;max-width:1000px;margin:auto">
+    <h1>Rejestrator MP4</h1>
+    <h2>Połączenie z kamerą</h2>
+    <label>Adres IP<input id="cameraIp" placeholder="192.0.2.10" autocomplete="off"></label>
+    <label>Użytkownik<input id="cameraUser" value="admin" autocomplete="off"></label>
+    <label>Hasło<input id="cameraPassword" type="password" autocomplete="off"></label>
+    <label>Kanał<input id="cameraChannel" value="101"></label>
+    <div class="row"><button id="connectCamera">Połącz kamerę</button><button id="disconnectCamera">Rozłącz</button></div>
+    <p id="cameraConnection" class="hint">Kamera nie jest potrzebna do analizy plików.</p>
+    <div class="recorder-preview-card">
+      <div class="recorder-preview-heading"><h2>Podgląd nagrywanego obrazu</h2><span id="recordPreviewState">Połącz kamerę</span></div>
+      <div class="recorder-preview-frame">
+        <iframe id="recordPlayer" title="Podgląd nagrywanego obrazu" allow="autoplay; fullscreen"></iframe>
+        <div id="recordPreviewPlaceholder">Po połączeniu kamery pojawi się tutaj obraz.</div>
+      </div>
+      <p class="hint">To ten sam lokalny strumień, który trafia do MP4. Podgląd nie dodaje ramek AI i nie tworzy drugiego połączenia z kamerą.</p>
+    </div>
+    <p>Zapis oryginalnego obrazu bez ramek AI i ponownego kodowania. Nagrywanie wyłącza analizę i jej dekoder.</p>
+    <div class="row"><button id="recordStart" class="primary">● Nagraj</button><button id="recordStop" disabled>■ Zatrzymaj i zapisz</button></div>
+    <p id="recordStatus" role="status">Ładowanie…</p>
+    <p id="recordPath" class="hint"></p>
+    <p class="hint">Ponowne uruchomienie AI rozpoczyna nową sesję statystyk. Nagranie trwa również po zamknięciu zakładki. Zatrzymaj je tutaj lub zamknij aplikację klawiszem Enter w konsoli.</p>
+    <h2>Nagrania</h2><div id="recordFiles"></div>
+  </section>
+  <script src="/app.js"></script>
+  <script src="/recorder.js"></script>
+  <script src="/settings.js"></script>
+  <script src="/mp4.js"></script>
+  <script src="/traffic.js"></script>
+</body>
+</html>
